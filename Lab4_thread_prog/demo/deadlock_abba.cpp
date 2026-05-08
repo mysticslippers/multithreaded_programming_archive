@@ -5,51 +5,63 @@
 #include <iostream>
 #include <thread>
 
-pthread_mutex_t a = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t b = PTHREAD_MUTEX_INITIALIZER;
+using namespace std;
 
-std::atomic<bool> first_done{false};
+constexpr useconds_t LOCK_DELAY_US = 5000;
+constexpr useconds_t WAIT_DELAY_US = 1000;
 
-void thread1() {
-    pthread_mutex_lock(&a);
-    usleep(5000);
+pthread_mutex_t mutex_a = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_b = PTHREAD_MUTEX_INITIALIZER;
 
-    pthread_mutex_lock(&b);
-    std::cout << "thread1: locked a -> b\n";
-    usleep(5000);
+// нужен, чтобы второй поток начал работу после построения ребра a -> b
+atomic<bool> first_thread_done{false};
 
-    pthread_mutex_unlock(&b);
-    pthread_mutex_unlock(&a);
-
-    first_done.store(true, std::memory_order_release);
+void wait_for_first_thread() {
+    while (!first_thread_done.load(memory_order_acquire)) {
+        usleep(WAIT_DELAY_US);
+    }
 }
 
-void thread2() {
-    while (!first_done.load(std::memory_order_acquire)) {
-        usleep(1000);
-    }
+void first_thread() {
+    pthread_mutex_lock(&mutex_a);
+    usleep(LOCK_DELAY_US);
 
-    pthread_mutex_lock(&b);
-    usleep(5000);
+    pthread_mutex_lock(&mutex_b);
+    cout << "thread1: locked a -> b\n";
+    usleep(LOCK_DELAY_US);
 
-    int rc = pthread_mutex_trylock(&a);
-    if (rc == 0) {
-        std::cout << "thread2: locked b -> a\n";
-        pthread_mutex_unlock(&a);
+    pthread_mutex_unlock(&mutex_b);
+    pthread_mutex_unlock(&mutex_a);
+
+    first_thread_done.store(true, memory_order_release);
+}
+
+void second_thread() {
+    wait_for_first_thread();
+
+    pthread_mutex_lock(&mutex_b);
+    usleep(LOCK_DELAY_US);
+
+    // trylock нужен, чтобы показать ребро b -> a, но не зависнуть реально в deadlock'е
+    const int result = pthread_mutex_trylock(&mutex_a);
+    if (result == 0) {
+        cout << "thread2: locked b -> a\n";
+        pthread_mutex_unlock(&mutex_a);
     } else {
-        std::cout << "thread2: trylock(a) failed unexpectedly with code " << rc << "\n";
+        cout << "thread2: trylock(a) failed unexpectedly with code "
+             << result << "\n";
     }
 
-    pthread_mutex_unlock(&b);
+    pthread_mutex_unlock(&mutex_b);
 }
 
 int main() {
-    std::thread t1(thread1);
-    std::thread t2(thread2);
+    thread t1(first_thread);
+    thread t2(second_thread);
 
     t1.join();
     t2.join();
 
-    std::cout << "deadlock_abba finished\n";
+    cout << "deadlock_abba finished\n";
     return 0;
 }

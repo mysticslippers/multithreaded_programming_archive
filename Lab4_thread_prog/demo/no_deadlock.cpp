@@ -4,28 +4,33 @@
 #include <iostream>
 #include <thread>
 
-pthread_mutex_t m1 = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t m2 = PTHREAD_MUTEX_INITIALIZER;
+using namespace std;
+
+constexpr useconds_t LOCK_DELAY_US = 5000;
+
+pthread_mutex_t first_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t second_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void worker(int id) {
-    pthread_mutex_lock(&m1);
-    usleep(5000);
+    // оба потока захватывают мьютексы в одном порядке: first -> second.
+    pthread_mutex_lock(&first_mutex);
+    usleep(LOCK_DELAY_US);
 
-    pthread_mutex_lock(&m2);
-    std::cout << "worker " << id << ": locked m1 -> m2\n";
-    usleep(5000);
+    pthread_mutex_lock(&second_mutex);
+    cout << "worker " << id << ": locked first -> second\n";
+    usleep(LOCK_DELAY_US);
 
-    pthread_mutex_unlock(&m2);
-    pthread_mutex_unlock(&m1);
+    pthread_mutex_unlock(&second_mutex);
+    pthread_mutex_unlock(&first_mutex);
 }
 
 int main() {
-    std::thread t1(worker, 1);
-    std::thread t2(worker, 2);
+    thread first_worker(worker, 1);
+    thread second_worker(worker, 2);
 
-    t1.join();
-    t2.join();
+    first_worker.join();
+    second_worker.join();
 
-    std::cout << "no_deadlock finished\n";
+    cout << "no_deadlock finished\n";
     return 0;
 }

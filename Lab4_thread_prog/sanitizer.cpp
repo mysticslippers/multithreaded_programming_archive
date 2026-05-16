@@ -109,6 +109,7 @@ void on_successful_lock(pthread_mutex_t *pthread_mutex) {
       DeadlockReport report = global_graph.add_edge(already_held, new_mutex);
       if (report.has_cycle) {
         print_deadlock_report(report, new_mutex);
+        _exit(1);
       }
     }
 
